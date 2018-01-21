@@ -1,0 +1,45 @@
+{
+    "type": "object",
+    "properties": {
+        "spider_type": {
+            "type": "string",
+            "default": "zzh"
+        },
+        "job_id": {
+            "type": "string"
+        },
+        "url": {
+            "type": "string"
+        },
+        "priority": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 1
+        },
+        "maxdepth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3,
+            "default": 0
+        },
+        "expires": {
+            "type": "integer",
+            "default": 0
+        },
+        "callback": {
+            "type": "string",
+            "default": "parse_inform_index"
+        },
+        "meta": {
+            "type": "object",
+            "default": null
+        }
+    },
+    "required": [
+        "url",
+        "meta",
+        "spider_type"
+    ],
+    "additionalProperties": false
+}
