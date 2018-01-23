@@ -27,10 +27,9 @@ class ScraperHandler(BaseHandler):
 
         try:
             self.redis_conn.info()
-            # self.logger.debug("Connected to Redis in ScraperHandler")
+            self.logger.debug("Connected to Redis in ScraperHandler")
         except ConnectionError:
             self.logger.error("Failed to connect to Redis in ScraperHandler")
-            # plugin is essential to functionality
             sys.exit(1)
 
     def handle(self, d):

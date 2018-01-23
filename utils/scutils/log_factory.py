@@ -119,7 +119,6 @@ class LogObject(object, LogCallbackMixin):
         @param format: The log format
         @param propagate: Allow the log to propagate to other ancestor loggers
         @param include_extra: When not logging json, include the 'extra' param
-
         '''
         # set up logger
         self.logger = logging.getLogger(name)
