@@ -5,9 +5,10 @@ from future import standard_library
 
 from builtins import str
 from builtins import object
-from scrapy.http import Request
+from scrapy_splash import SplashRequest
 from scrapy.conf import settings
 from scrapy.utils.python import to_unicode
+from scrapy.utils.reqser import request_to_dict, request_from_dict
 
 import socket, fcntl, struct
 import redis
@@ -337,7 +338,8 @@ class DistributedScheduler(object):
         self.job_id = '1'
         self.spider.set_logger(self.logger)
         self.create_throttle_queues()
-        self.setup_zookeeper()
+        self.setup_zookeeper()  # 连接zookeeper
+        self.setup_kafka()  # 连接Kafka
 
         key = "stats:spider:{ip}:{job}".format(
             ip=DistributedScheduler.get_local_ip(),
@@ -464,28 +466,31 @@ class DistributedScheduler(object):
             return
 
         item = self.find_item()
-        print 'aaaa', item
+
         if item:
-            self.logger.debug("Found url to crawl {url}".format(url=item['url']))
-            try:
-                req = Request(item['url'], meta=item['meta'], priority=item['priority'])
-            except ValueError:
-                req = Request('http://' + item['url'])
-
-            try:
-                if 'callback' in item and item['callback'] is not None:
-                    req.callback = getattr(self.spider, item['callback'])
-            except AttributeError:
-                self.logger.warn("Unable to find callback method")
-
-            try:
-                if 'errback' in item and item['errback'] is not None:
-                    req.errback = getattr(self.spider, item['errback'])
-            except AttributeError:
-                self.logger.warn("Unable to find errback method")
-
+            '''考虑两种情况的Request:
+                1. 被渲染后的Request
+                2. 前端用户传入的Request
+            '''
+            if 'splash' in item['meta']:
+                self.logger.debug("Crawl url: %s via %s" % (item['splash']['args']['url'], item['url']))
+                req = request_from_dict(item, self.spider)
+            else:
+                req = SplashRequest(url=item['url'],
+                                    callback=item['callback'],
+                                    meta=item['meta'])
+                if 'method' in item['method']:
+                    req.method = item['method']
+                if 'headers' in item['headers']:
+                    req.headers = item['headers']
+                if 'body' in item['body']:
+                    req.body = item['body']
+                if 'cookies' in item['cookies']:
+                    req.cookies = item['cookies']
+                if 'priority' in item['priority']:
+                    req.priority = item['priority']
+                self.logger.debug("Crawl url: %s" % item['url'])
             return req
-
         return None
 
     def status_from_redis(self):
@@ -524,7 +529,7 @@ class DistributedScheduler(object):
         '''
         return False
 
-    def _setup_kafka(self):
+    def setup_kafka(self):
         """
         创建生产者
         :return:

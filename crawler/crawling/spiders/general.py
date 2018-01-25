@@ -42,7 +42,7 @@ class ZzhSpider(RedisSpider):
                     if 'attr' in val else acquire(sel.css(val).xpath('string(.)').extract())  # 提取标签属性值或文本值
 
 
-            if 'second_page_css' not in response.meta['second_page_css']:
+            if 'second_page_css' not in response.meta:
                 self.logger.info('Finish the task: %s', response.url)
                 yield item
 
