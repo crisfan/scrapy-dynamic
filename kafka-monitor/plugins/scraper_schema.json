@@ -8,15 +8,7 @@
         "job_id": {
             "type": "string"
         },
-        "url": {
-            "type": "string"
-        },
-        "priority": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100,
-            "default": 1
-        },
+
         "maxdepth": {
             "type": "integer",
             "minimum": 0,
@@ -27,10 +19,51 @@
             "type": "integer",
             "default": 0
         },
+
+        "url": {
+            "type": "string"
+        },
+
         "callback": {
             "type": "string",
             "default": "parse_inform_index"
         },
+
+        "errback": {
+
+        },
+
+        "method": {
+
+        },
+
+        "headers": {
+
+        },
+
+        "body": {
+
+        },
+
+        "cookies": {
+
+        },
+
+        "encoding": {
+
+        },
+
+        "priority": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 1
+        },
+
+        "dont_filter": {
+
+        },
+
         "meta": {
             "type": "object",
             "default": null
