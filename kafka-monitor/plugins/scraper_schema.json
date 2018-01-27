@@ -30,43 +30,50 @@
         },
 
         "errback": {
-
+            "type": "string",
+            "default": "parse_inform_index"
         },
 
         "method": {
-
+            "type": "string"
         },
 
         "headers": {
-
+            "type": "object"
         },
 
         "body": {
-
+            "type": "string"
         },
 
         "cookies": {
+            "type": "object"
 
         },
 
-        "encoding": {
+        "_encoding": {
+            "type": "string"
 
         },
 
         "priority": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 100,
+            "minimum": 0,
+            "maximum": 1000,
             "default": 1
         },
 
         "dont_filter": {
+            "type": "boolean"
 
         },
 
         "meta": {
             "type": "object",
             "default": null
+        },
+        "_class": {
+            "type": "string"
         }
     },
     "required": [

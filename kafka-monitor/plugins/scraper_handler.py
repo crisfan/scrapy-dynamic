@@ -39,7 +39,8 @@ class ScraperHandler(BaseHandler):
         @param d: a valid dictionary object
         '''
 
-        ex_res = self.extract(d['url'])
+        real_url = d['meta']['splash']['args']['url'] if 'splash' in d['meta'] else d['url']
+        ex_res = self.extract(real_url)
 
         if 'job_id' in d:
             key = '{spider_type}:{job_id}:{domain}:queue'.format(spider_type=d['spider_type'],
