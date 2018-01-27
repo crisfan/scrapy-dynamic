@@ -94,7 +94,7 @@ SC_LOG_MAX_BYTES = 10 * 1024 * 1024
 SC_LOG_BACKUPS = 5
 SC_LOG_STDOUT = True
 SC_LOG_JSON = False
-SC_LOG_LEVEL = 'INFO'
+SC_LOG_LEVEL = 'DEBUG'
 
 
 # stats setup
@@ -134,8 +134,8 @@ SPIDER_MIDDLEWARES = {
     # disable built-in DepthMiddleware, since we do our own
     # depth management per crawl request
     'scrapy.spidermiddlewares.depth.DepthMiddleware': None,
-    'crawling.meta_passthrough_middleware.MetaPassthroughMiddleware': 100,
-    'crawling.redis_stats_middleware.RedisStatsMiddleware': 101
+    # 'crawling.meta_passthrough_middleware.MetaPassthroughMiddleware': 100,
+    # 'crawling.redis_stats_middleware.RedisStatsMiddleware': 101
 }
 
 DOWNLOADER_MIDDLEWARES = {
@@ -147,6 +147,9 @@ DOWNLOADER_MIDDLEWARES = {
     # custom cookies to not persist across crawl requests
     'scrapy.downloadermiddlewares.cookies.CookiesMiddleware': None,
     'crawling.custom_cookies.CustomCookiesMiddleware': 700,
+    'scrapy_splash.SplashCookiesMiddleware': 723,
+    'scrapy_splash.SplashMiddleware': 725,
+
 }
 
 # Disable the built in logging in production
@@ -165,6 +168,7 @@ DNSCACHE_ENABLED = True
 # Local Overrides
 # ~~~~~~~~~~~~~~~
 
+SPLASH_URL = 'http://0.0.0.0:8050/'
 
 # MONGODB_HOST = '127.0.183.170'
 MONGODB_HOST = '127.0.0.1'

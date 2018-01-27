@@ -33,7 +33,7 @@ from scutils.redis_queue import RedisPriorityQueue
 from scutils.redis_throttled_queue import RedisThrottledQueue
 from scutils.log_factory import LogFactory
 from retrying import retry
-
+from scrapy import Request
 
 standard_library.install_aliases()
 
@@ -320,7 +320,8 @@ class DistributedScheduler(object):
                                          bytes=my_bytes,
                                          backups=my_backups)
 
-        spider_ids = ['1', ]
+        # spider_ids = ['1', ]
+        spider_ids = ['1', '2', '3']
         chose = ketama.Continuum(spider_ids)
 
         return cls(server, persist, up_int, timeout, retries, logger, hits,
@@ -334,8 +335,8 @@ class DistributedScheduler(object):
     def open(self, spider):
         self.spider = spider
         self.ip = DistributedScheduler.get_local_ip()
-        # self.job_id = spider.settings['job_id']
-        self.job_id = '1'
+        self.job_id = spider.settings['job_id']
+        # self.job_id = '1'
         self.spider.set_logger(self.logger)
         self.create_throttle_queues()
         self.setup_zookeeper()  # 连接zookeeper
@@ -390,18 +391,20 @@ class DistributedScheduler(object):
         :param request:
         :return:
         """
-        if not request.dont_filter and self.dupefilter.request_seen(request):
+        if not True and self.dupefilter.request_seen(request):
             self.logger.debug("Request not added back to redis")
             return
-        req_dict = self.request_to_dict(request)
+        req_dict = request_to_dict(request, self.spider)
+        real_url = req_dict['meta']['splash']['args']['url'] if 'splash' in req_dict['meta'] else req_dict['url']
         # 强调:  加入spider_type，job_id
         req_dict['spider_type'] = self.spider.name
-        req_dict['job_id'] = self.job_id
-
+        req_dict['job_id'] = self.chose[real_url.encode('utf-8')]
+        # req_dict['errback'] = 'parse_inform_index'
+        req_dict.update({'errback': 'parse_inform_index'})
         self._feed_to_kafka(req_dict)
 
     def _feed_to_kafka(self, json_item):
-        @MethodTimer.timeout(settings['KAFKA_FEED_TIMEOUT'], False)
+
         def _feed(item):
             try:
                 self.logger.debug("Sending json to kafka at " +
@@ -416,28 +419,6 @@ class DistributedScheduler(object):
                 return False
 
         return _feed(json_item)
-
-    def request_to_dict(self, request):
-        """
-        将request对象转化为对应的字典返回
-        :param request:
-        :return:
-        """
-        req_dict = {
-            # urls should be safe (safe_string_url)
-            'url': to_unicode(request.url),
-            'method': request.method,
-            'headers': dict(request.headers),
-            'body': request.body,
-            'cookies': request.cookies,
-            'meta': request.meta,
-            '_encoding': request._encoding,
-            'priority': request.priority,
-            'dont_filter': request.dont_filter,
-            'callback': None if request.callback is None else request.callback.__name__,
-            'errback': None if request.errback is None else request.errback.__name__,
-        }
-        return req_dict
 
     def find_item(self):
         random.shuffle(self.queue_keys)
@@ -466,28 +447,41 @@ class DistributedScheduler(object):
             return
 
         item = self.find_item()
-
         if item:
             '''考虑两种情况的Request:
                 1. 被渲染后的Request
                 2. 前端用户传入的Request
             '''
             if 'splash' in item['meta']:
-                self.logger.debug("Crawl url: %s via %s" % (item['splash']['args']['url'], item['url']))
-                req = request_from_dict(item, self.spider)
+                self.logger.debug("Crawl url: %s via %s" % (item['meta']['splash']['args']['url'], item['url']))
+                # req = request_from_dict(item, self.spider)
+                req = SplashRequest(url=item['url'],
+                                    meta=item['meta'],
+                                    method=item['method'],
+                                    body=item['body'],
+                                    dont_send_headers=True
+                                    )
+                if 'callback' in item:
+                    req.callback = getattr(self.spider, item['callback'])
+                req.headers['content-type'] = 'application/json'
+                if 'headers' in req.meta['splash']['args']:
+                    req.meta['splash']['args']['headers'] = {}
+                    req.meta['splash']['args']['content-type'] = 'application/json'
             else:
                 req = SplashRequest(url=item['url'],
                                     callback=item['callback'],
-                                    meta=item['meta'])
-                if 'method' in item['method']:
+                                    meta=item['meta'],
+                                    dont_send_headers=True
+                                    )
+                if 'method' in item:
                     req.method = item['method']
-                if 'headers' in item['headers']:
+                if 'headers' in item:
                     req.headers = item['headers']
-                if 'body' in item['body']:
+                if 'body' in item:
                     req.body = item['body']
-                if 'cookies' in item['cookies']:
+                if 'cookies' in item:
                     req.cookies = item['cookies']
-                if 'priority' in item['priority']:
+                if 'priority' in item:
                     req.priority = item['priority']
                 self.logger.debug("Crawl url: %s" % item['url'])
             return req

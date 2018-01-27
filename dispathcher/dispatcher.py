@@ -125,8 +125,8 @@ class Dispatcher:
                 self.logger.debug('调整爬虫节点所负责的站点数据抓取任务, 请勿在此段时间启动额外的爬虫..........')
                 queue_keys = self.server.keys('*:queue')
                 for queue_key in queue_keys:
-                    tasks.extend(self.server.lrange(queue_key, 0, -1))  # 获取所有爬虫队列中的urls
-                    self.server.ltrim(queue_key, -1, 0)  # 清空爬虫队列
+                    tasks.extend(self.server.zrange(queue_key, 0, -1))  # 获取所有爬虫队列中的urls
+                    self.server.zremrangebyrank(queue_key, 0, -1)  # 清空爬虫队列
 
                 self.logger.debug('恢复先前暂停的爬虫节点.......')
                 for spider_ip_id in spider_ip_ids:

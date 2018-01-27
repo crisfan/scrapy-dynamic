@@ -57,7 +57,7 @@ class RFPDupeFilter(BaseDupeFilter):
         """
         fp = self.request_fingerprint(request)
         # This returns the number of values added, zero if already exists.
-        return self.df.do_filter(fp)
+        return self.df.do_filter(fp) == False
 
     def request_fingerprint(self, request):
         """Returns a fingerprint for a given request.

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+import chardet
 from lxml import etree
 from scrapy.selector import Selector
 from scrapy_splash import SplashRequest
@@ -23,7 +23,6 @@ class ZzhSpider(RedisSpider):
 
     def parse_inform_index(self, response):
         """extract the links from notification list"""
-
         first_page_css = response.meta['first_page_css']  # 获取首页的字段及其规则
         second_page_url = ''
 
