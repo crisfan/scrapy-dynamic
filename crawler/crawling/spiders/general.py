@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import chardet
+
 from lxml import etree
 from scrapy.selector import Selector
 from scrapy_splash import SplashRequest
