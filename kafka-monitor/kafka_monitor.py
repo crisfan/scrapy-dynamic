@@ -264,6 +264,7 @@ class KafkaMonitor(object):
     def _process_messages(self):
         try:
             for message in self.consumer:
+                print message, 'message'
                 if message is None:
                     self.logger.debug("no message")
                     break
@@ -447,7 +448,6 @@ class KafkaMonitor(object):
             self.logger.debug("Creating new kafka consumer using brokers: " +
                                str(brokers) + ' and topic ' +
                                self.settings['KAFKA_INCOMING_TOPIC'])
-
             return KafkaConsumer(
                 self.settings['KAFKA_INCOMING_TOPIC'],
                 group_id=self.settings['KAFKA_GROUP'],

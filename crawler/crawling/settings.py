@@ -25,9 +25,6 @@ ZOOKEEPER_ASSIGN_PATH = '/scrapy-cluster/crawler/'
 ZOOKEEPER_ID = 'all'
 ZOOKEEPER_HOSTS = '192.168.1.222:2181'
 
-PUBLIC_IP_URL = 'http://ip.42.pl/raw'
-IP_ADDR_REGEX = '(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
-
 # Don't cleanup redis queues, allows to pause/resume crawls.
 SCHEDULER_PERSIST = True
 
@@ -43,9 +40,6 @@ QUEUE_MODERATED = True
 
 # how long we want the duplicate timeout queues to stick around in seconds
 DUPEFILTER_TIMEOUT = 600
-
-# how often to refresh the ip address of the scheduler
-SCHEDULER_IP_REFRESH = 60
 
 # whether to add depth >= 1 blacklisted domain requests back to the queue
 SCHEDULER_BACKLOG_BLACKLIST = True
@@ -76,9 +70,6 @@ SCHEDULER_TYPE_ENABLED = True
 
 # add ip address to throttle mechanism
 SCHEDULER_IP_ENABLED = True
-'''
-----------------------------------------
-'''
 
 # how many times to retry getting an item from the queue before the spider is considered idle
 SCHEUDLER_ITEM_RETRIES = 3
@@ -87,14 +78,14 @@ SCHEUDLER_ITEM_RETRIES = 3
 SCHEDULER_QUEUE_TIMEOUT = 3600
 
 # log setup scrapy cluster crawler
-SC_LOGGER_NAME = 'sc-crawler'
+SC_LOGGER_NAME = 'crawler'
 SC_LOG_DIR = 'logs'
-SC_LOG_FILE = 'sc_crawler.log'
+SC_LOG_FILE = 'crawler.log'
 SC_LOG_MAX_BYTES = 10 * 1024 * 1024
 SC_LOG_BACKUPS = 5
 SC_LOG_STDOUT = True
 SC_LOG_JSON = False
-SC_LOG_LEVEL = 'INFO'
+SC_LOG_LEVEL = 'DEBUG'
 
 
 # stats setup
@@ -112,9 +103,6 @@ STATS_TIMES = [
 ]
 
 # Scrapy Settings
-# ~~~~~~~~~~~~~~~
-# Scrapy settings for distributed_crawling project
-#
 BOT_NAME = 'crawling'
 
 SPIDER_MODULES = ['crawling.spiders']
@@ -134,8 +122,8 @@ SPIDER_MIDDLEWARES = {
     # disable built-in DepthMiddleware, since we do our own
     # depth management per crawl request
     'scrapy.spidermiddlewares.depth.DepthMiddleware': None,
-    'crawling.meta_passthrough_middleware.MetaPassthroughMiddleware': 100,
-    'crawling.redis_stats_middleware.RedisStatsMiddleware': 101
+    # 'crawling.meta_passthrough_middleware.MetaPassthroughMiddleware': 100,
+    # 'crawling.redis_stats_middleware.RedisStatsMiddleware': 101
 }
 
 DOWNLOADER_MIDDLEWARES = {
@@ -147,10 +135,13 @@ DOWNLOADER_MIDDLEWARES = {
     # custom cookies to not persist across crawl requests
     'scrapy.downloadermiddlewares.cookies.CookiesMiddleware': None,
     'crawling.custom_cookies.CustomCookiesMiddleware': 700,
+    'scrapy_splash.SplashCookiesMiddleware': 723,
+    'scrapy_splash.SplashMiddleware': 725,
+
 }
 
 # Disable the built in logging in production
-LOG_ENABLED = False
+LOG_ENABLED = True
 
 # Allow all return codes
 HTTPERROR_ALLOW_ALL = True
@@ -163,8 +154,7 @@ DOWNLOAD_TIMEOUT = 10
 DNSCACHE_ENABLED = True
 
 # Local Overrides
-# ~~~~~~~~~~~~~~~
-
+SPLASH_URL = 'http://0.0.0.0:8050/'
 
 # MONGODB_HOST = '127.0.183.170'
 MONGODB_HOST = '127.0.0.1'

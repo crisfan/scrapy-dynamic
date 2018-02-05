@@ -5,7 +5,7 @@ import time
 import redis
 import sys
 from redis.exceptions import ConnectionError
-
+import chardet
 
 class RedisStatsMiddleware(object):
 
@@ -108,6 +108,7 @@ class RedisStatsMiddleware(object):
         Ensures the meta data from the response is passed
         through in any Request's generated from the spider
         '''
+        # print response.body
         self.logger.debug("processing redis stats middleware")
         if self.settings['STATS_STATUS_CODES']:
             if spider.name not in self.stats_dict:

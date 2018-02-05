@@ -96,8 +96,8 @@ class LogRetryMiddleware(object):
         extras['error_reason'] = exception
         extras['retry_count'] = request.meta.get('retry_times', 0)
         extras['status_code'] = 504
-        extras['appid'] = request.meta['appid']
-        extras['crawlid'] = request.meta['crawlid']
+        # extras['appid'] = request.meta['appid']
+        # extras['crawlid'] = request.meta['crawlid']
         extras['url'] = request.url
 
         self.logger.error('Scraper Retry', extra=extras)

@@ -5,11 +5,13 @@ from future import standard_library
 
 from builtins import str
 from builtins import object
-from scrapy.http import Request
+from scrapy_splash import SplashRequest
 from scrapy.conf import settings
-from scrapy.utils.python import to_unicode
+from scrapy.utils.reqser import request_to_dict
 
-import socket, fcntl, struct
+import socket
+import fcntl
+import struct
 import redis
 import random
 import time
@@ -20,22 +22,26 @@ import socket
 import re
 import json
 import traceback
-import ketama
 
 from kafka import KafkaProducer
 from crawling.utils.dupefilter import RFPDupeFilter
 from kazoo.handlers.threading import KazooTimeoutError
+from twisted.internet import task
 
-from scutils.method_timer import MethodTimer
 from scutils.zookeeper_watcher import ZookeeperWatcher
 from scutils.redis_queue import RedisPriorityQueue
 from scutils.redis_throttled_queue import RedisThrottledQueue
 from scutils.log_factory import LogFactory
 from retrying import retry
 
-
 standard_library.install_aliases()
 
+
+def get_local_ip(ifname='enp1s0'):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    inet = fcntl.ioctl(s.fileno(), 0x8915, struct.pack('256s', ifname[:15]))
+    ret = socket.inet_ntoa(inet[20:24])
+    return ret
 
 class DistributedScheduler(object):
 
@@ -52,12 +58,13 @@ class DistributedScheduler(object):
     hits = 0  # default number of hits for a queue
     window = 0  # default window to calculate number of hits
     ip = '127.0.0.1'  # 爬虫节点对应的IP
-    old_ip = None  # the old ip for logging
+
     ip_update_interval = 0  # the interval to update the ip address
     add_type = None  # add spider type to redis throttle queue key
     add_ip = None  # add spider public ip to redis throttle queue key
     item_retries = 0  # the number of extra tries to get an item
     my_uuid = None  # the generated UUID for the particular scrapy process
+
     # Zookeeper Dynamic Config Vars
     domain_config = {}  # The list of domains and their configs
     my_id = None  # The id used to read the throttle config
@@ -71,8 +78,7 @@ class DistributedScheduler(object):
     closed = False  # kafka连接是否关闭
 
     def __init__(self, server, persist, update_int, timeout, retries, logger,
-                 hits, window, mod, ip_refresh, add_type, add_ip, ip_regex,
-                 backlog_blacklist, queue_timeout, chose):
+                 hits, window, mod, add_type, backlog_blacklist, queue_timeout):
         self.redis_conn = server
         self.persist = persist
         self.queue_dict = {}
@@ -81,18 +87,15 @@ class DistributedScheduler(object):
         self.window = window
         self.moderated = mod
         self.rfp_timeout = timeout
-        self.ip_update_interval = ip_refresh
         self.add_type = add_type
-        self.add_ip = add_ip
         self.item_retires = retries
         self.logger = logger
-        self.ip_regex = re.compile(ip_regex)
         self.backlog_blacklist = backlog_blacklist
         self.queue_timeout = queue_timeout
-        self.chose = chose
         self.extract = tldextract.TLDExtract()
 
         self.job_id = None  # 标识爬虫进程
+        self.task = None
         self.paused = False  # 标识爬虫是否暂停
 
     def setup_zookeeper(self):
@@ -267,21 +270,6 @@ class DistributedScheduler(object):
 
         return False
 
-    def report_self(self):
-        ip = DistributedScheduler.get_local_ip()
-        key = "stats:spider:{ip}:{job}".format(
-            ip=ip,
-            job=self.job_id
-        )
-        self.redis_conn.set(key, time.time())
-
-    @staticmethod
-    def get_local_ip(ifname='enp1s0'):
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        inet = fcntl.ioctl(s.fileno(), 0x8915, struct.pack('256s', ifname[:15]))
-        ret = socket.inet_ntoa(inet[20:24])
-        return ret
-
     @classmethod
     def from_settings(cls, settings):
         server = redis.Redis(host=settings.get('REDIS_HOST'),
@@ -293,11 +281,9 @@ class DistributedScheduler(object):
         window = settings.get('QUEUE_WINDOW', 60)
         mod = settings.get('QUEUE_MODERATED', False)
         timeout = settings.get('DUPEFILTER_TIMEOUT', 600)
-        ip_refresh = settings.get('SCHEDULER_IP_REFRESH', 60)
         add_type = settings.get('SCHEDULER_TYPE_ENABLED', True)
         add_ip = settings.get('SCHEDULER_IP_ENABLED', False)
         retries = settings.get('SCHEUDLER_ITEM_RETRIES', 3)
-        ip_regex = settings.get('IP_ADDR_REGEX', '.*')
         backlog_blacklist = settings.get('SCHEDULER_BACKLOG_BLACKLIST', True)
         queue_timeout = settings.get('SCHEDULER_QUEUE_TIMEOUT', 3600)
 
@@ -318,13 +304,9 @@ class DistributedScheduler(object):
                                          file=my_file,
                                          bytes=my_bytes,
                                          backups=my_backups)
-
-        spider_ids = ['1', ]
-        chose = ketama.Continuum(spider_ids)
-
         return cls(server, persist, up_int, timeout, retries, logger, hits,
-                   window, mod, ip_refresh, add_type, add_ip, ip_regex,
-                   backlog_blacklist, queue_timeout, chose)
+                   window, mod, add_type, add_ip,
+                   backlog_blacklist, queue_timeout)
 
     @classmethod
     def from_crawler(cls, crawler):
@@ -332,18 +314,20 @@ class DistributedScheduler(object):
 
     def open(self, spider):
         self.spider = spider
-        self.ip = DistributedScheduler.get_local_ip()
-        # self.job_id = spider.settings['job_id']
-        self.job_id = '1'
+        self.ip = get_local_ip()
+        self.job_id = spider.settings['job_id']
         self.spider.set_logger(self.logger)
         self.create_throttle_queues()
-        self.setup_zookeeper()
+        self.setup_zookeeper()  # 连接zookeeper
+        self.setup_kafka()  # 连接Kafka
 
+        self.task = task.LoopingCall(self.status_from_redis)
+        self.task.start(5)
         key = "stats:spider:{ip}:{job}".format(
-            ip=DistributedScheduler.get_local_ip(),
+            ip=get_local_ip(),
             job=self.job_id
         )
-        self.redis_conn.set(key, time.time())
+        self.redis_conn.set(key, 'Running')
         self.dupefilter = RFPDupeFilter(self.redis_conn, self.spider.name)
 
     def close(self, reason):
@@ -356,13 +340,11 @@ class DistributedScheduler(object):
                 self.queue_dict[key][0].clear()
 
         # 清空Redis中爬虫节点状态
-        ip = DistributedScheduler.get_local_ip()
+        ip = get_local_ip()
         key = "stats:spider:{ip}:{job}".format(
             ip=ip,
             job=self.job_id
         )
-        self.redis_conn.delete(key)
-        key = "{job}:status".format(job=self.job_id)
         self.redis_conn.delete(key)
 
         # 关闭Kafka连接
@@ -388,18 +370,20 @@ class DistributedScheduler(object):
         :param request:
         :return:
         """
-        if not request.dont_filter and self.dupefilter.request_seen(request):
+        if not True and self.dupefilter.request_seen(request):
             self.logger.debug("Request not added back to redis")
             return
-        req_dict = self.request_to_dict(request)
+        req_dict = request_to_dict(request, self.spider)
+        real_url = req_dict['meta']['splash']['args']['url'] if 'splash' in req_dict['meta'] else req_dict['url']
         # 强调:  加入spider_type，job_id
         req_dict['spider_type'] = self.spider.name
-        req_dict['job_id'] = self.job_id
-
+        req_dict['job_id'] = self.chose[real_url.encode('utf-8')]
+        # req_dict['errback'] = 'parse_inform_index'
+        req_dict.update({'errback': 'parse_inform_index'})
         self._feed_to_kafka(req_dict)
 
     def _feed_to_kafka(self, json_item):
-        @MethodTimer.timeout(settings['KAFKA_FEED_TIMEOUT'], False)
+
         def _feed(item):
             try:
                 self.logger.debug("Sending json to kafka at " +
@@ -414,28 +398,6 @@ class DistributedScheduler(object):
                 return False
 
         return _feed(json_item)
-
-    def request_to_dict(self, request):
-        """
-        将request对象转化为对应的字典返回
-        :param request:
-        :return:
-        """
-        req_dict = {
-            # urls should be safe (safe_string_url)
-            'url': to_unicode(request.url),
-            'method': request.method,
-            'headers': dict(request.headers),
-            'body': request.body,
-            'cookies': request.cookies,
-            'meta': request.meta,
-            '_encoding': request._encoding,
-            'priority': request.priority,
-            'dont_filter': request.dont_filter,
-            'callback': None if request.callback is None else request.callback.__name__,
-            'errback': None if request.errback is None else request.errback.__name__,
-        }
-        return req_dict
 
     def find_item(self):
         random.shuffle(self.queue_keys)
@@ -464,45 +426,56 @@ class DistributedScheduler(object):
             return
 
         item = self.find_item()
-        print 'aaaa', item
         if item:
-            self.logger.debug("Found url to crawl {url}".format(url=item['url']))
-            try:
-                req = Request(item['url'], meta=item['meta'], priority=item['priority'])
-            except ValueError:
-                req = Request('http://' + item['url'])
-
-            try:
-                if 'callback' in item and item['callback'] is not None:
+            '''考虑两种情况的Request:
+                1. 被渲染后的Request
+                2. 前端用户传入的Request
+            '''
+            if 'splash' in item['meta']:
+                self.logger.debug("Crawl url: %s via %s" % (item['meta']['splash']['args']['url'], item['url']))
+                # req = request_from_dict(item, self.spider)
+                req = SplashRequest(url=item['url'],
+                                    meta=item['meta'],
+                                    method=item['method'],
+                                    body=item['body'],
+                                    dont_send_headers=True
+                                    )
+                if 'callback' in item:
                     req.callback = getattr(self.spider, item['callback'])
-            except AttributeError:
-                self.logger.warn("Unable to find callback method")
-
-            try:
-                if 'errback' in item and item['errback'] is not None:
-                    req.errback = getattr(self.spider, item['errback'])
-            except AttributeError:
-                self.logger.warn("Unable to find errback method")
-
+                req.headers['content-type'] = 'application/json'
+                if 'headers' in req.meta['splash']['args']:
+                    req.meta['splash']['args']['headers'] = {}
+                    req.meta['splash']['args']['content-type'] = 'application/json'
+            else:
+                req = SplashRequest(url=item['url'],
+                                    callback=item['callback'],
+                                    meta=item['meta'],
+                                    dont_send_headers=True
+                                    )
+                if 'method' in item:
+                    req.method = item['method']
+                if 'headers' in item:
+                    req.headers = item['headers']
+                if 'body' in item:
+                    req.body = item['body']
+                if 'cookies' in item:
+                    req.cookies = item['cookies']
+                if 'priority' in item:
+                    req.priority = item['priority']
+                self.logger.debug("Crawl url: %s" % item['url'])
             return req
-
         return None
 
     def status_from_redis(self):
         self.create_throttle_queues()
         self.expire_queues()
 
-        status = self.redis_conn.get('{job}:status'.format(job=self.job_id))
-        if status == 'pause':  # 暂停爬虫 && 重置一致性分布
-            self.paused = True
-            spiders = self.redis_conn.keys('stats:spider:*:*')
-            spider_ids = []
-            for spider in spiders:
-                spider_ids.append(spider.split(':')[3])
-            self.chose = ketama.Continuum(spider_ids)
-            return
-        if status == 'running':
-            self.paused = False
+        key = "stats:spider:{ip}:{job}".format(
+            ip=get_local_ip(),
+            job=self.job_id
+        )
+        status = self.redis_conn.get(key)
+        self.paused = True if status == 'pause' else False
 
     def parse_cookie(self, string):
         '''
@@ -524,7 +497,7 @@ class DistributedScheduler(object):
         '''
         return False
 
-    def _setup_kafka(self):
+    def setup_kafka(self):
         """
         创建生产者
         :return:
